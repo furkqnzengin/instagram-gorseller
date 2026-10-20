@@ -10,6 +10,7 @@ Kullanım:
   python3 reels/paylas.py           # sıradaki bölümü paylaşır
 """
 import json, os, subprocess, sys, time
+from datetime import datetime, timedelta, timezone
 
 API = "https://graph.instagram.com/v23.0"
 IG = "17841422928756043"
@@ -24,22 +25,34 @@ def curl(*args):
 
 
 def posted_numbers(plan):
-    d = curl(f"{API}/{IG}/media?fields=caption&limit=50")
+    """Paylaşılmış bölüm numaraları ve serinin son paylaşım zamanı (UTC)."""
+    d = curl(f"{API}/{IG}/media?fields=caption,timestamp&limit=50")
     if "error" in d:
         sys.exit(f"HATA medya listesi: {d}")
-    captions = [m.get("caption") or "" for m in d.get("data", [])]
-    return {p["n"] for p in plan if any(p["key"] in c for c in captions)}
+    done, last = set(), None
+    for m in d.get("data", []):
+        c = m.get("caption") or ""
+        for p in plan:
+            if p["key"] in c:
+                done.add(p["n"])
+                t = datetime.strptime(m["timestamp"], "%Y-%m-%dT%H:%M:%S%z")
+                last = max(last, t) if last else t
+    return done, last
 
 
 def main():
     plan = json.load(open(PLAN, encoding="utf-8"))
-    done = posted_numbers(plan)
+    done, last = posted_numbers(plan)
     todo = [p for p in plan if p["n"] not in done]
     if "--durum" in sys.argv:
         print(f"Paylaşılan: {sorted(done)}  Sıradaki: {todo[0]['n'] if todo else '-'}")
         return
     if not todo:
         print("BITTI: 10/10 paylaşılmış.")
+        return
+    # Aynı gün iki bölüm çıkmasın: son paylaşım 12 saatten yeniyse bekle.
+    if last and datetime.now(timezone.utc) - last < timedelta(hours=12):
+        print(f"ATLANDI: son bölüm {last.isoformat()} tarihinde paylaşıldı, yarın devam.")
         return
     p = todo[0]
     c = curl("-X", "POST", f"{API}/{IG}/media",
