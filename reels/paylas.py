@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Kur'an ve Hayat serisinin sıradaki Reels videosunu paylaşır.
 
-Hangi bölümün sırada olduğunu hesaptaki son paylaşımların açıklamasındaki
-"Kur'an ve Hayat · N/10" etiketinden bulur; böylece aynı video iki kez paylaşılmaz.
+Hangi bölümün sırada olduğunu, plan.json'daki her açıklamanın ilk satırını ("key")
+hesaptaki son paylaşımların açıklamalarında arayarak bulur; böylece aynı video iki kez paylaşılmaz.
 Token ortamın ağ proxy'si tarafından ekleniyor.
 
 Kullanım:
   python3 reels/paylas.py --durum   # sadece hangi bölümlerin paylaşıldığını gösterir
   python3 reels/paylas.py           # sıradaki bölümü paylaşır
 """
-import json, os, re, subprocess, sys, time
+import json, os, subprocess, sys, time
 
 API = "https://graph.instagram.com/v23.0"
 IG = "17841422928756043"
@@ -23,20 +23,17 @@ def curl(*args):
     return json.loads(out)
 
 
-def posted_numbers():
+def posted_numbers(plan):
     d = curl(f"{API}/{IG}/media?fields=caption&limit=50")
     if "error" in d:
         sys.exit(f"HATA medya listesi: {d}")
-    nums = set()
-    for m in d.get("data", []):
-        for n in re.findall(r"Kur'an ve Hayat · (\d+)/10", m.get("caption") or ""):
-            nums.add(int(n))
-    return nums
+    captions = [m.get("caption") or "" for m in d.get("data", [])]
+    return {p["n"] for p in plan if any(p["key"] in c for c in captions)}
 
 
 def main():
     plan = json.load(open(PLAN, encoding="utf-8"))
-    done = posted_numbers()
+    done = posted_numbers(plan)
     todo = [p for p in plan if p["n"] not in done]
     if "--durum" in sys.argv:
         print(f"Paylaşılan: {sorted(done)}  Sıradaki: {todo[0]['n'] if todo else '-'}")
